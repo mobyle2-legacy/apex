@@ -35,7 +35,7 @@
                 <td>
                   <input tal:condition="python:group.get('deletable', False)" type="checkbox" value="${group.id}" name="delete"/>
                 </td>
-                <td>${group['name']}</td>
+                <td><a href="${request.route_path('apex_editgroup')}?id=${group['id']}">${group['name']}</a></td>
                 <td>${group['description']}</td>
               </tr>
             </tal:r>

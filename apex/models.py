@@ -34,10 +34,10 @@ DBSession = scoped_session(sessionmaker(extension=ZopeTransactionExtension()))
 Base = declarative_base()
 
 user_group_table = Table('auth_user_groups', Base.metadata,
-    Column('user_id', types.Integer(), \
-        ForeignKey('auth_users.id', onupdate='CASCADE', ondelete='CASCADE')),
-    Column('group_id', types.Integer(), \
-        ForeignKey('auth_groups.id', onupdate='CASCADE', ondelete='CASCADE'))
+    Column('user_id', types.Integer(), 
+        ForeignKey('auth_users.id', onupdate='CASCADE', ondelete='CASCADE'), primary_key=True),
+    Column('group_id', types.Integer(), 
+        ForeignKey('auth_groups.id', onupdate='CASCADE', ondelete='CASCADE'), primary_key=True)
 )
 
 class AuthGroup(Base):
@@ -246,7 +246,9 @@ def populate(settings):
     session.flush()
     transaction.commit()
 
-def initialize_sql(engine, settings):
+def initialize_sql(engine, settings=None):
+    if not settings:
+        settings = {}
     DBSession.configure(bind=engine)
     Base.metadata.bind = engine
     Base.metadata.create_all(engine)
@@ -294,7 +296,7 @@ def create_user(**kwargs):
     # extra kw groups splitted on ','
     if 'groups' in kwargs:
         try:
-            sgroups = kwargs['group'].split(',')
+            sgroups = kwargs['groups'].split(',')
             qgroups= DBSession.query(AuthGroup).filter(
                 AuthGroup.name.in_(sgroups)).all()
             for group in qgroups:
