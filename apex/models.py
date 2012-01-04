@@ -9,6 +9,7 @@ from sqlalchemy import Column
 from sqlalchemy import ForeignKey
 from sqlalchemy import Table
 from sqlalchemy import Unicode
+from sqlalchemy import Boolean
 from sqlalchemy import types
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.exc import IntegrityError
@@ -91,14 +92,24 @@ class AuthUser(Base):
     groups = relationship('AuthGroup', secondary=user_group_table, \
                       backref='auth_users')
 
-    last_login = relationship('AuthUserLog', \
-                         order_by='AuthUserLog.id.desc()')
+    last_events = relationship('AuthUserLog', \
+                         order_by='AuthUserLog.time.desc()')
     login_log = relationship('AuthUserLog', \
                          order_by='AuthUserLog.id')
     """
     Fix this to use association_proxy
     groups = association_proxy('user_group_table', 'authgroup')
     """
+
+
+    @property
+    def last_logins(self):
+        return [a for a in self.last_events if a.event == 'L']
+
+    @property
+    def last_login(self):
+        if self.last_logins:
+            return self.last_logins[0]
 
     def _set_password(self, password):
         self._password = BCRYPTPasswordManager().encode(password, rounds=12)
@@ -108,6 +119,7 @@ class AuthUser(Base):
 
     password = synonym('_password', descriptor=property(_get_password, \
                        _set_password))
+
 
     def in_group(self, group):
         """
@@ -222,6 +234,8 @@ class AuthUserLog(Base):
     user_id = Column(types.Integer, ForeignKey(AuthUser.id), index=True)
     time = Column(types.DateTime(), default=func.now())
     ip_addr = Column(Unicode(39), nullable=False)
+    internal_user = Column(Boolean, nullable=False, default=False)
+    external_user = Column(Boolean, nullable=False, default=False)
     event = Column(types.Enum(u'L',u'R',u'P',u'F', name=u"event"), default=u'L')
 
 

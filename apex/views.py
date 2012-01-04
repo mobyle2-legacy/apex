@@ -188,7 +188,7 @@ def login(request):
         user = search_user(username)
         if local_status and user:
             if user.active == 'Y':
-                headers = apex_remember(request, user.id)
+                headers = apex_remember(request, user.id, internal_user=True)
                 return HTTPFound(location=came_from, headers=headers)
         else:
             stop = False
@@ -449,7 +449,7 @@ def register(request):
             response = HTTPFound(location=came_from)
         else:
             transaction.commit()
-            headers = apex_remember(request, user.id)
+            headers = apex_remember(request, user.id, internal_user=True)
             response = HTTPFound(location=came_from, headers=headers)
         return response
 
@@ -508,7 +508,14 @@ def apex_callback(request):
                         (route_url('apex_openid_required', request), \
                         request.GET.get('came_from', \
                         route_url(apex_settings('came_from_route'), request))))
-            headers = apex_remember(request, user.id)
+            using_ldap = 'ldap' in [a.get('domain', '') 
+                                    for a in auth.get(
+                                        "profile", {}).get("accounts", [])]
+            external_user = True
+            internal_user = using_ldap
+            headers = apex_remember(request, user.id, 
+                                    internal_user=internal_user, 
+                                    external_user=external_user)
             redir = request.GET.get('came_from', \
                         route_url(apex_settings('came_from_route'), request))
             flash(_('Successfully Logged in, welcome!'), 'success')
@@ -559,7 +566,7 @@ def openid_required(request):
             setattr(user, required, form.data[required])
         DBSession.merge(user)
         DBSession.flush()
-        headers = apex_remember(request, user.id)
+        headers = apex_remember(request, user.id, external_user=True)
         return HTTPFound(location=came_from, headers=headers)
 
     return {'title': title, 'form': form, 'action': 'openid_required'}

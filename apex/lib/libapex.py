@@ -275,14 +275,17 @@ def get_module(package):
     resolver = DottedNameResolver(package.split('.', 1)[0])
     return resolver.resolve(package)
 
-def apex_remember(request, user_id):
+def apex_remember(request, user_id, external_user=False, internal_user=False):
     if asbool(apex_settings('log_logins')):
         if apex_settings('log_login_header'):
             ip_addr=request.environ.get(apex_settings('log_login_header'), \
                     u'invalid value - apex.log_login_header')
         else:
              ip_addr=request.environ['REMOTE_ADDR']
-        record = AuthUserLog(user_id=user_id, ip_addr=ip_addr)
+        record = AuthUserLog(user_id=user_id, 
+                             ip_addr=ip_addr, 
+                             external_user=external_user,
+                             internal_user=internal_user)
         DBSession.add(record)
         DBSession.flush()
     return remember(request, user_id)
