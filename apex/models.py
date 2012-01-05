@@ -24,10 +24,10 @@ from sqlalchemy.sql.expression import func
 
 from velruse.store.sqlstore import SQLBase
 
-from zope.sqlalchemy import ZopeTransactionExtension 
+from zope.sqlalchemy import ZopeTransactionExtension
 
 from apex.lib.db import get_or_create
-from apex.events import UserCreatedEvent, GroupCreatedEvent
+from apex.events import UserCreatedEvent, GroupCreatedEvent, UserDeletedEvent
 
 from apex.i18n import MessageFactory as _
 
@@ -35,15 +35,15 @@ DBSession = scoped_session(sessionmaker(extension=ZopeTransactionExtension()))
 Base = declarative_base()
 
 user_group_table = Table('auth_user_groups', Base.metadata,
-    Column('user_id', types.Integer(), 
+    Column('user_id', types.Integer(),
         ForeignKey('auth_users.id', onupdate='CASCADE', ondelete='CASCADE'), primary_key=True),
-    Column('group_id', types.Integer(), 
+    Column('group_id', types.Integer(),
         ForeignKey('auth_groups.id', onupdate='CASCADE', ondelete='CASCADE'), primary_key=True)
 )
 
 class AuthGroup(Base):
     """ Table name: auth_groups
-    
+
 ::
 
     id = Column(types.Integer(), primary_key=True)
@@ -52,7 +52,7 @@ class AuthGroup(Base):
     """
     __tablename__ = 'auth_groups'
     __table_args__ = {"sqlite_autoincrement": True}
-    
+
     id = Column(types.Integer(), primary_key=True)
     name = Column(Unicode(80), unique=True, nullable=False)
     description = Column(Unicode(255), default=u'')
@@ -65,7 +65,7 @@ class AuthGroup(Base):
 
     def __unicode__(self):
         return self.name
-    
+
 
 class AuthUser(Base):
     """ Table name: auth_users
@@ -129,7 +129,7 @@ class AuthUser(Base):
 
     @classmethod
     def get_by_id(cls, id):
-        """ 
+        """
         Returns AuthUser object or None by id
 
         .. code-block:: python
@@ -138,11 +138,11 @@ class AuthUser(Base):
 
            user = AuthUser.get_by_id(1)
         """
-        return DBSession.query(cls).filter(cls.id==id).first()    
+        return DBSession.query(cls).filter(cls.id==id).first()
 
     @classmethod
     def get_by_login(cls, login):
-        """ 
+        """
         Returns AuthUser object or None by login
 
         .. code-block:: python
@@ -155,7 +155,7 @@ class AuthUser(Base):
 
     @classmethod
     def get_by_username(cls, username):
-        """ 
+        """
         Returns AuthUser object or None by username
 
         .. code-block:: python
@@ -168,7 +168,7 @@ class AuthUser(Base):
 
     @classmethod
     def get_by_email(cls, email):
-        """ 
+        """
         Returns AuthUser object or None by email
 
         .. code-block:: python
@@ -208,7 +208,7 @@ class AuthUser(Base):
 
         .. code-block:: python
 
-           apex.auth_profile = 
+           apex.auth_profile =
         """
         if not request:
             request = get_current_request()
@@ -219,9 +219,10 @@ class AuthUser(Base):
             profile_cls = resolver.resolve(auth_profile)
             return get_or_create(DBSession, profile_cls, user_id=self.id)
 
+
 class AuthUserLog(Base):
     """
-    event: 
+    event:
       L - Login
       R - Register
       P - Password
@@ -231,13 +232,12 @@ class AuthUserLog(Base):
     __table_args__ = {"sqlite_autoincrement": True}
 
     id = Column(types.Integer, primary_key=True)
-    user_id = Column(types.Integer, ForeignKey(AuthUser.id), index=True)
+    user_id = Column(types.Integer, ForeignKey(AuthUser.id, onupdate='CASCADE', ondelete='CASCADE'), index=True)
     time = Column(types.DateTime(), default=func.now())
     ip_addr = Column(Unicode(39), nullable=False)
     internal_user = Column(Boolean, nullable=False, default=False)
     external_user = Column(Boolean, nullable=False, default=False)
     event = Column(types.Enum(u'L',u'R',u'P',u'F', name=u"event"), default=u'L')
-
 
 
 def get_default_groups(settings):
@@ -247,7 +247,7 @@ def get_default_groups(settings):
             default_groups.append((unicode(name.strip()),u''))
     else:
         default_groups = [(u'users',u'User Group'), \
-                          (u'admin',u'Admin Group')] 
+                          (u'admin',u'Admin Group')]
 
     return default_groups
 
@@ -274,6 +274,32 @@ def initialize_sql(engine, settings=None):
     except IntegrityError:
         transaction.abort()
 
+
+def delete_user(user, request=None, registry=None):
+    """
+    """
+    if registry is None:
+        registry = get_current_registry()
+    if request is None:
+        request = get_current_request()
+        # when request is not available fake it a bit
+        if request is None:
+            class obj(object): pass
+            class session:
+                def flash(self, *args, **kwargs):pass
+            obj.registry = registry
+            obj.session = session() 
+            request = obj() 
+    settings = registry.settings 
+    try:
+        transaction.commit()
+        registry.notify(UserDeletedEvent(request, user))
+        DBSession.delete(AuthUser.get_by_id(user.id))
+        transaction.commit()
+    except Exception, e:
+        raise Exception('Can\'t delete user: %s' % e)
+    return user
+
 def create_user(**kwargs):
     """
 ::
@@ -284,6 +310,9 @@ def create_user(**kwargs):
     """
     request = get_current_request()
     registry = get_current_registry()
+    if 'registry' in kwargs:
+        registry = kwargs['registry']
+        del kwargs['registry']
     settings = registry.settings
     # map default groups
     groups = []
@@ -297,7 +326,7 @@ def create_user(**kwargs):
         AuthGroup.name=='users').first()
     if qgroup:
         if not qgroup in groups:
-            groups.append(qgroup) 
+            groups.append(qgroup)
     # extra kw group
     if 'group' in kwargs:
         try:
@@ -322,7 +351,7 @@ def create_user(**kwargs):
     # register user
     user = AuthUser()
     for key, value in kwargs.items():
-        setattr(user, key, value)  
+        setattr(user, key, value)
     DBSession.add(user)
     try:
         transaction.commit()
@@ -335,14 +364,22 @@ def create_user(**kwargs):
             except Exception, e:
                 error = _('Cant add user :%s to group: %s (%s)') % (user, group, e)
                 logging.getLogger('apex.add_user_to_group').error(error)
-                request.session.flash(error, 'error') 
+                request.session.flash(error, 'error')
         transaction.commit()
         DBSession.add(user)
+        # when request is not available fake it a bit
+        class obj(object): pass
+        class session:
+            def flash(self, *args, **kwargs):pass
+        obj.registry = registry
+        obj.session = session()
+        if request is None:
+            request = obj()
         registry.notify(UserCreatedEvent(request, user))
         transaction.commit()
         DBSession.add(user)
     except Exception, e:
-        raise Exception('Cant create user: %s' % e)  
+        raise Exception('Cant create user: %s' % e)
     return user
 
 def create_group(**kwargs):

@@ -282,8 +282,8 @@ def apex_remember(request, user_id, external_user=False, internal_user=False):
                     u'invalid value - apex.log_login_header')
         else:
              ip_addr=request.environ['REMOTE_ADDR']
-        record = AuthUserLog(user_id=user_id, 
-                             ip_addr=ip_addr, 
+        record = AuthUserLog(user_id=user_id,
+                             ip_addr=ip_addr,
                              external_user=external_user,
                              internal_user=internal_user)
         DBSession.add(record)
